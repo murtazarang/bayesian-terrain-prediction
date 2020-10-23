@@ -32,7 +32,6 @@ def train():
 
     sequence_data = pd.read_pickle('./data/sequence_data/' + args.dataset + '.pkl')
 
-
 if __name__ == '__main__':
     train()
 
