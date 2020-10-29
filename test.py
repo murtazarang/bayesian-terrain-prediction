@@ -21,70 +21,86 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 import pickle
 
+from functools import partial
+
 def test():
-    train = pd.read_csv('./data/train.csv')
-    test = pd.read_csv('./data/test.csv')
+    df = pd.DataFrame()
 
-    train['date'] = pd.to_datetime(train['date'])
-    test['date'] = pd.to_datetime(test['date'])
+    x = [np.random.uniform(0, 20, size=(3, 4, 5)) for _ in range(25)]
 
-    test['sales'] = np.nan
-    data = pd.concat([train, test], ignore_index=True)
-    data['store_item_id'] = data['store'].astype(str) + '_' + data['item'].astype(str)
+    df['test_col'] = x
 
-    data['dayofweek'] = data['date'].dt.dayofweek
-    data['month'] = data['date'].dt.month
-    data['year'] = data['date'].dt.year
-    data['day'] = data['date'].dt.day
+    print(df.head())
 
-    data['dayofweek_sin'] = sin_transform(data['dayofweek'])
-    data['dayofweek_cos'] = cos_transform(data['dayofweek'])
-    data['month_sin'] = sin_transform(data['month'])
-    data['month_cos'] = cos_transform(data['month'])
-    data['day_sin'] = sin_transform(data['day'])
-    data['day_cos'] = cos_transform(data['day'])
-
-    data.drop('id', axis=1, inplace=True)
-
-    data = data.sort_values(['store_item_id', 'date'])
-
-    train['store_item_id'] = train['store'].astype(str) + '_' + train['item'].astype(str)
-
-
-    mode = 'valid'
-    if mode == 'valid':
-        scale_data = train[train['date'] < '2017-01-01']
-    else:
-        scale_data = train[train['date'] >= '2014-01-01']
-
-    scale_map = {}
-    scaled_data = pd.DataFrame()
-    i = 0
-    for store_item_id, item_data in data.groupby('store_item_id', as_index=False):
-        print('new')
-        print(item_data.head())
-        sidata = scale_data.loc[scale_data['store_item_id'] == store_item_id, 'sales']
-        print(sidata.head())
-        mu = sidata.mean()
-        sigma = sidata.std()
-        yearly_autocorr = get_yearly_autocorr(sidata)
-        print("item data what?")
-        print(item_data.loc[:, 'sales'].head())
-        item_data.loc[:, 'sales'] = (item_data['sales'] - mu) / sigma
-        print(item_data.head())
-        scale_map[store_item_id] = {'mu': mu, 'sigma': sigma}
-        item_data['mean_sales'] = mu
-        item_data['yearly_corr'] = yearly_autocorr
-        scaled_data = pd.concat([scaled_data, item_data], ignore_index=True)
-        i += 1
-        if i == 2:
-            print(scaled_data.head())
-            print(scaled_data.tail())
-            break
-        else:
-            print(scaled_data.head())
-            print(scaled_data.tail())
-            continue
+    # def add(x, a, b):
+    #     return x + 10 * a + 100 * b
+    #
+    # add = partial(add, a=2)
+    #
+    # print(add(x=4, b=1))
+    # train = pd.read_csv('./data/train.csv')
+    # test = pd.read_csv('./data/test.csv')
+    #
+    # train['date'] = pd.to_datetime(train['date'])
+    # test['date'] = pd.to_datetime(test['date'])
+    #
+    # test['sales'] = np.nan
+    # data = pd.concat([train, test], ignore_index=True)
+    # data['store_item_id'] = data['store'].astype(str) + '_' + data['item'].astype(str)
+    #
+    # data['dayofweek'] = data['date'].dt.dayofweek
+    # data['month'] = data['date'].dt.month
+    # data['year'] = data['date'].dt.year
+    # data['day'] = data['date'].dt.day
+    #
+    # data['dayofweek_sin'] = sin_transform(data['dayofweek'])
+    # data['dayofweek_cos'] = cos_transform(data['dayofweek'])
+    # data['month_sin'] = sin_transform(data['month'])
+    # data['month_cos'] = cos_transform(data['month'])
+    # data['day_sin'] = sin_transform(data['day'])
+    # data['day_cos'] = cos_transform(data['day'])
+    #
+    # data.drop('id', axis=1, inplace=True)
+    #
+    # data = data.sort_values(['store_item_id', 'date'])
+    #
+    # train['store_item_id'] = train['store'].astype(str) + '_' + train['item'].astype(str)
+    #
+    #
+    # mode = 'valid'
+    # if mode == 'valid':
+    #     scale_data = train[train['date'] < '2017-01-01']
+    # else:
+    #     scale_data = train[train['date'] >= '2014-01-01']
+    #
+    # scale_map = {}
+    # scaled_data = pd.DataFrame()
+    # i = 0
+    # for store_item_id, item_data in data.groupby('store_item_id', as_index=False):
+    #     print('new')
+    #     print(item_data.head())
+    #     sidata = scale_data.loc[scale_data['store_item_id'] == store_item_id, 'sales']
+    #     print(sidata.head())
+    #     mu = sidata.mean()
+    #     sigma = sidata.std()
+    #     yearly_autocorr = get_yearly_autocorr(sidata)
+    #     print("item data what?")
+    #     print(item_data.loc[:, 'sales'].head())
+    #     item_data.loc[:, 'sales'] = (item_data['sales'] - mu) / sigma
+    #     print(item_data.head())
+    #     scale_map[store_item_id] = {'mu': mu, 'sigma': sigma}
+    #     item_data['mean_sales'] = mu
+    #     item_data['yearly_corr'] = yearly_autocorr
+    #     scaled_data = pd.concat([scaled_data, item_data], ignore_index=True)
+    #     i += 1
+    #     if i == 2:
+    #         print(scaled_data.head())
+    #         print(scaled_data.tail())
+    #         break
+    #     else:
+    #         print(scaled_data.head())
+    #         print(scaled_data.tail())
+    #         continue
 
 
 def sin_transform(values):

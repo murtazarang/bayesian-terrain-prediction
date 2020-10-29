@@ -4,6 +4,8 @@ import pickle
 import pandas as pd
 pd.set_option('display.max_columns', None)
 
+import gc
+
 from sklearn.preprocessing import MinMaxScaler
 from statsmodels.tsa.stattools import acf
 
@@ -17,6 +19,8 @@ def load_data(args):
         fert_df = pd.read_csv("./data/Fertilizer1dAnnual.csv")
 
     elif args.model in ["3D", "3d"]:
+        if args.xdim * args.ydim != args.num_features:
+            assert "Incorrect Feature Dimensions"
         fert_df = pd.read_csv("./data/Fertilizer3dAnnual.csv")
 
     else:
@@ -32,8 +36,17 @@ def load_data(args):
     height_list = ["h" + str(i + 1) for i in range(args.num_features)]
     for i, h in enumerate(height_list):
         fert_df['log_h' + str(i + 1)] = np.log(fert_df[h])
+        # Compress it since it blows up the dataframe size
+        c_min = fert_df['log_h' + str(i + 1)].min()
+        c_max = fert_df['log_h' + str(i + 1)].max()
+        if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+            fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float16)
+        elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+            fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float32)
+        else:
+            fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float64)
 
-    log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
+    # log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
 
     # Specify cyclical nature of the data per year with sine/cosine date values
     # https: // ianlondon.github.io / blog / encoding - cyclical - features - 24hour - time /
@@ -48,48 +61,74 @@ def load_data(args):
 
     # Now we perform scaling/normalization on the training and omit the validation/target set.
     if args.training_mode == 'train':
-        scale_data = train_data[train_data['date'] < args.validation_start_date]
+        scale_data_train = train_data[train_data['date'] < args.validation_start_date]
+        scale_data_test = test_data
     elif args.training_mode == 'test':
-        scale_data = train_data[train_data['date'] < args.training_start_date]
+        scale_data_train = train_data[train_data['date'] < args.training_start_date]
+        scale_data_test = test_data
 
-    # To capture the yearly trend of the fertilizer height we also standardize and compute the yearly autocorrelation for each height.
-    scale_map = {}
-    scaled_data = pd.DataFrame()
-    scaled_data = pd.concat([scaled_data, scale_data], ignore_index=True)
+    """
+    Scaling Train and Test Data Independently
+    """
+    scale_map_train = {}
+    scaled_data_train = pd.DataFrame()
+    scaled_data_train = pd.concat([scaled_data_train, scale_data_train], ignore_index=True)
 
+    scale_map_test = {}
+    scaled_data_test = pd.DataFrame()
+    scaled_data_test = pd.concat([scaled_data_test, scale_data_test], ignore_index=True)
+
+    # To capture the yearly trend of the fertilizer height we also standardize and compute the yearly
+    # auto-correlation for each height.
     for h in height_list:
-        h_i_data = scale_data[h]
-        h_i_mean = h_i_data.mean()
+        h_i_data = scale_data_train[h]
+        h_i_mean = h_i_data[h].mean()
         h_i_var = h_i_data.std()
         h_year_autocorr = get_yearly_autocorr(h_i_data)
-        # Standardize
-        scaled_data[h + '_yearly_corr'] = h_year_autocorr
-        scaled_data[h] = (scaled_data[h] - h_i_mean) / h_i_var
-        scale_map[h] = {'mu': h_i_mean, 'sigma': h_i_var}
+        # Standardize for Train
+        scaled_data_train[h + '_yearly_corr'] = h_year_autocorr
+        scaled_data_train[h] = (scaled_data_train[h] - h_i_mean) / h_i_var
+        scale_map_train[h] = {'mu': h_i_mean, 'sigma': h_i_var}
 
-    yearly_autocorr_height_list = [h + '_yearly_corr' for h in height_list]
+        # Do the same for Test data
+        h_i_data = scale_data_test[h]
+        h_i_mean = h_i_data[h].mean()
+        h_i_var = h_i_data.std()
+        h_year_autocorr = get_yearly_autocorr(h_i_data)
+        # Standardize for Test
+        scaled_data_test[h + '_yearly_corr'] = h_year_autocorr
+        scaled_data_test[h] = (scaled_data_test[h] - h_i_mean) / h_i_var
+        scale_map_test[h] = {'mu': h_i_mean, 'sigma': h_i_var}
 
-    selected_columns = ['date', 'day_of_year', 'year', 'day_of_year_sin', 'day_of_year_cos', 'year_mod'] + height_list\
-                       + log_height_list + yearly_autocorr_height_list
+    # yearly_autocorr_height_list = [h + '_yearly_corr' for h in height_list]
+    # selected_columns = ['date', 'day_of_year', 'year', 'day_of_year_sin', 'day_of_year_cos', 'year_mod'] + height_list \
+    #                     + log_height_list + yearly_autocorr_height_list
+
+    # Drop unnecessary features from Train and Test Data
+    if args.model in ['1D', '1d']:
+        scaled_data_train = scaled_data_train.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
+        scaled_data_test = scaled_data_test.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
+    elif args.model in ['3D', '3d']:
+        scaled_data_train = scaled_data_train.drop(['day_of_year', 'year'], axis=1, inplace=True)
+        scaled_data_test = scaled_data_test.drop(['day_of_year', 'year'], axis=1, inplace=True)
 
     print("General raw metrics for height for (x_0, y_0): ")
     print(fert_df['h1'].describe())
     print('\n')
     print("Input data: ")
-    print(scaled_data.head())
+    # print(scaled_data.head())
     print('\n')
+    # print("Input Features")
+    # if args.model in ["1d", "1D"]:
+    #     print(scaled_data.drop(['date', 'day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1).head())
+    # elif args.model in ["3D", "3d"]:
+    #     print(scaled_data.drop(['date', 'day_of_year', 'year'], axis=1).head())
+    # print('\n')
 
-    print("Input Features")
-    if args.model in ["1d", "1D"]:
-        print(scaled_data.drop(['date', 'day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1).head())
-    elif args.model in ["3D", "3d"]:
-        print(scaled_data.drop(['date', 'day_of_year', 'year'], axis=1).head())
-    print('\n')
-
-    if args.model in ['1D', '1d']:
-        scaled_data.to_pickle('./data/processed_data/' + args.dataset + 'pkl')
-    elif args.model in ['3D', '3d']:
-        scaled_data.to_pickle('./data/processed_data/' + args.dataset + '.pkl')
+    scaled_data_train.to_pickle('./data/processed_data/' + args.model + '_train_processed_data' + '.pkl')
+    scaled_data_test.to_pickle('./data/processed_data/' + args.model + '_test_processed_data' + '.pkl')
+    pickle.dump(scale_map_train, open('./data/processed_data/' + args.model + '_scale_map_train.pkl', 'wb'))
+    pickle.dump(scale_map_test, open('./data/processed_data/' + args.model + '_scale_map_test.pkl', 'wb'))
 
 
 def split_timeseries_data(args, data):

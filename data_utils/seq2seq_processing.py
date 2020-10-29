@@ -2,6 +2,7 @@ import traceback
 import tqdm
 import numpy as np
 import pandas as pd
+import multiprocessing as mp
 from functools import partial
 from tqdm.contrib.concurrent import process_map
 from collections import defaultdict
@@ -110,7 +111,6 @@ def _apply_df(args):
     result = df.groupby(key_column).progress_apply(func)
     return result
 
-
 def almost_equal_split(seq, num):
     avg = len(seq) / float(num)
     out = []
@@ -130,87 +130,155 @@ def mp_apply(df, func, key_column):
     return pd.concat(result)
 
 
-def sequence_builder(args, data, n_steps_in, n_steps_out, key_column, x_cols, y_col, y_cols, additional_columns, diff=False, lag_fns=[], step=1):
-    if diff:
-        # multiple y_cols not supported yet
-        sequence_fn = partial(
-            split_sequence_difference,
-            n_steps_in=n_steps_in,
-            n_steps_out=n_steps_out,
-            x_cols=x_cols,
-            y_col=y_col,
-            diff=diff,
-            additional_columns=list(set([key_column] + additional_columns))
-        )
-        data['unmod_y'] = data[y_col]
-        sequence_data = mp_apply(
-            data[list(set([key_column] + x_cols + [y_col, 'unmod_y'] + y_cols + additional_columns))],
-            sequence_fn,
-            key_column
-        )
+def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, additional_columns, use_log_h = False, lag_fns=[], step=1):
+    if args.model in ['1D', '1d']:
+        data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
+    elif args.model in ['3D', '3d']:
+        data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
     else:
-        # first entry in y_cols should be the target variable
-        sequence_fn = partial(
-            split_sequences,
-            n_steps_in=n_steps_in,
-            n_steps_out=n_steps_out,
-            x_cols=x_cols,
-            y_cols=y_cols,
-            additional_columns=list(set([key_column] + additional_columns)),
-            lag_fns=lag_fns,
-            step=step
-        )
-        sequence_data = mp_apply(
-            data[list(set([key_column] + x_cols + y_cols + additional_columns))],
-            sequence_fn,
-            key_column
-        )
+        assert "Incorrect model"
+        return
+
+    if args.compress_data:
+        data = reduce_mem_usage(data)
+        print("Compressed Data")
+        # print(scaled_data.head())
+        print('\n')
+
+    if args.model in ['1d', '1D']:
+        if use_log_h is True:
+            data['log_h_final'] = data['log_h1']
+
+        if use_log_h is False:
+            data['h_final'] = data['h1']
+            data['h_final_yearly_corr'] = data['h1_yearly_corr']
+
+    elif args.model in ['3d', '3D']:
+        if use_log_h is True:
+            log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
+            # Produces [num_features, data_length]
+            h_log_aggr_list = np.array([np.array(data[h]) for h in log_height_list])
+            # Change to (data_len, num_features) and then move to 3D
+            h_log_aggr_list = np.swapaxes(h_log_aggr_list, 1, 0)
+            h_log_aggr_list = np.reshape(h_log_aggr_list, (-1, args.xdim, args.ydim))
+            h_log_aggr_list = list(h_log_aggr_list)
+            data['log_h_final'] = h_log_aggr_list
+
+        if use_log_h is False:
+            height_list = ["h" + str(i + 1) for i in range(args.num_features)]  # This is already scaled
+            height_yearly_corr = [h + '_yearly_corr' for h in height_list]
+            h_aggr_list = np.array([np.array(data[h]) for h in height_list])
+            # Change to (data_len, num_features) and then move to 3D
+            h_aggr_list = np.swapaxes(h_aggr_list, 1, 0)
+            h_aggr_list = np.reshape(h_aggr_list, (-1, args.xdim, args.ydim))
+            h_aggr_list = list(h_aggr_list)
+            print(len(h_aggr_list))
+            data['h_final'] = h_aggr_list
+            h_corr_aggr_list = np.array([np.array(data[h_corr]) for h_corr in height_yearly_corr])
+            # Change to (data_len, num_features) and then move to 3D
+            h_corr_aggr_list = np.swapaxes(h_corr_aggr_list, 1, 0)
+            h_corr_aggr_list = np.reshape(h_corr_aggr_list, (-1, args.xdim, args.ydim))
+            h_corr_aggr_list = list(h_corr_aggr_list)
+            print(len(h_corr_aggr_list))
+            data['h_final_yearly_corr'] = h_corr_aggr_list
+
+    # first entry in y_cols should be the target variable
+    sequence_fn = partial(
+        split_sequences,
+        n_steps_in=n_steps_in,
+        n_steps_out=n_steps_out,
+        x_cols=x_cols,
+        y_cols=y_cols,
+        additional_columns=list(set([key_column] + additional_columns)),
+        lag_fns=lag_fns,
+        step=step
+    )
+    sequence_data = mp_apply(
+        data[list(set([key_column] + x_cols + y_cols + additional_columns))],
+        sequence_fn,
+        key_column
+    )
     sequence_data = pd.DataFrame(sequence_data, columns=['result'])
     s = sequence_data.apply(lambda x: pd.Series(zip(*[col for col in x['result']])), axis=1).stack().reset_index(level=1, drop=True)
     s.name = 'result'
     sequence_data = sequence_data.drop('result', axis=1).join(s)
     sequence_data['result'] = pd.Series(sequence_data['result'])
-    if diff:
-        sequence_data[['x_sequence', 'y_sequence'] + sorted(set([key_column] + additional_columns + ['x_base', 'y_base', 'mean_traffic']))] = pd.DataFrame(sequence_data.result.values.tolist(), index=sequence_data.index)
-    else:
-        sequence_data[['x_sequence', 'y_sequence'] + sorted(set([key_column] + additional_columns))] = pd.DataFrame(sequence_data.result.values.tolist(), index=sequence_data.index)
+    # if diff:
+    #     sequence_data[['x_sequence', 'y_sequence'] + sorted(set([key_column] + additional_columns + ['x_base', 'y_base', 'mean_traffic']))] = pd.DataFrame(sequence_data.result.values.tolist(), index=sequence_data.index)
+    # else:
+    sequence_data[['x_sequence', 'y_sequence'] + sorted(set([key_column] + additional_columns))] = pd.DataFrame(sequence_data.result.values.tolist(), index=sequence_data.index)
     sequence_data.drop('result', axis=1, inplace=True)
     if key_column in sequence_data.columns:
         sequence_data.drop(key_column, axis=1, inplace=True)
     sequence_data = sequence_data.reset_index()
     print(sequence_data.shape)
     sequence_data = sequence_data[~sequence_data['x_sequence'].isnull()]
+
+
     return sequence_data
 
 
-def last_year_lag(col):
-    return (col.shift(364) * 0.25) + (col.shift(365) * 0.5) + (col.shift(366) * 0.25)
+def last_year_lag(col): return (col.shift(364) * 0.25) + (col.shift(365) * 0.5) + (col.shift(366) * 0.25)
 
 
 def seq_data(args):
     if args.model in ['1D', '1d']:
-        scaled_data = pd.read_pickle('./data/processed_data/' + args.dataset + '.pkl')
+        scaled_data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
     elif args.model in ['3D', '3d']:
-        scaled_data = pd.read_pickle('./data/processed_data/' + args.dataset + '.pkl')
+        scaled_data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
     else:
         assert "Incorrect model"
         return
 
     if args.compress_data:
         scaled_data = reduce_mem_usage(scaled_data)
-
         print("Compressed Data")
-        print(scaled_data.head())
+        # print(scaled_data.head())
         print('\n')
 
-    sequence_data = sequence_builder(args, scaled_data, args.in_seq_len, args.out_seq_len,
-                                     'store_item_id',
-                                     ['sales', 'dayofweek_sin', 'dayofweek_cos', 'month_sin', 'month_cos', 'year_mod',
-                                      'day_sin', 'day_cos'],
-                                     'sales',
-                                     ['sales', 'dayofweek_sin', 'dayofweek_cos', 'month_sin', 'month_cos', 'year_mod',
-                                      'day_sin', 'day_cos'],
-                                     ['item', 'store', 'date', 'yearly_corr'],
-                                     lag_fns=[last_year_lag]
-                                     )
-    sequence_data.to_pickle('./data/sequence_data/' + args.dataset + '.pkl')
+    height_list = ["h" + str(i + 1) for i in range(args.num_features)]  # This is already scaled
+    log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
+    height_yearly_corr = [h + '_yearly_corr' for h in height_list]
+
+    """
+    # 1D Case
+
+    1. Build Sequence for Log h
+    2. Build Sequence for Min-Max Norm of h
+    3. Save both to separate pickle
+    
+    """
+    # Do with Log Height
+    selected_columns = ['log_h_final', 'day_of_year_sin', 'day_of_year_cos', 'year_mod']
+    additional_columns = ['date']
+
+    with mp.Pool(1) as pool:
+        log_sequence_data = \
+        pool.map(sequence_builder, [args, args.in_seq_len, args.out_seq_len,
+                                    None, selected_columns, selected_columns, additional_columns, True])[0]
+
+        log_sequence_data.to_pickle('./data/sequence_data/' + args.model + '_log_seq_data' + '.pkl')
+
+    # Do with Yearly Corr
+    selected_columns = ['h_final', 'day_of_year_sin', 'day_of_year_cos', 'year_mod']
+    additional_columns = ['date',  'h_final_yearly_corr']
+
+    with mp.Pool(1) as pool:
+        norm_sequence_data = \
+            pool.map(sequence_builder, [args, args.in_seq_len, args.out_seq_len,
+                                        None, selected_columns, selected_columns, additional_columns, False, [last_year_lag]])[0]
+
+        norm_sequence_data.to_pickle('./data/sequence_data/' + args.model + '_corr_seq_data' + '.pkl')
+
+
+    # sequence_data = sequence_builder(args, scaled_data, args.in_seq_len, args.out_seq_len,
+    #                                  'store_item_id', # key_column
+    #                                  ['sales', 'dayofweek_sin', 'dayofweek_cos', 'month_sin', 'month_cos', 'year_mod',
+    #                                   'day_sin', 'day_cos'], # x_cols
+    #                                  'sales', # y_col
+    #                                  ['sales', 'dayofweek_sin', 'dayofweek_cos', 'month_sin', 'month_cos', 'year_mod',
+    #                                   'day_sin', 'day_cos'], # y_cols
+    #                                  ['item', 'store', 'date', 'yearly_corr'], # additional_col
+    #                                  lag_fns=[last_year_lag]
+    #                                  )
+    #
