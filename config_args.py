@@ -5,9 +5,9 @@ def parse_args():
     parser = argparse.ArgumentParser("TimeSeries")
 
     parser.add_argument("--model", type=str, default="3D", choices=["1D", "1d", "3D", "3d"])
-    parser.add_argument("--num_features", type=int, default=10000)
-    parser.add_argument("--xdim", type=int, default=100)
-    parser.add_argument("--ydim", type=int, default=100)
+    parser.add_argument("--num_features", type=int, default=100)
+    parser.add_argument("--xdim", type=int, default=10)
+    parser.add_argument("--ydim", type=int, default=10)
 
     parser.add_argument("--in_seq_len", type=int, default=60)
     parser.add_argument("--out_seq_len", type=int, default=30)
@@ -31,10 +31,10 @@ def parse_args():
     parser.add_argument("--bayes-dropout", type=float, default=0.5)
 
     # Data pre-processing methods
-    parser.add_argument("--no_cylical_dates", action='store_false')
+    parser.add_argument("--no_cylical_dates", default=False, action='store_true')
     parser.add_argument("--height_correction", type=str, default='log', choices=['log', 'autocorrelation'])
     parser.add_argument("--training_mode", type=str, default="train", choices=["test", "train"])
-    parser.add_argument("--testing_start_date", type=str, default='2009-01-01')
+    parser.add_argument("--testing_start_date", type=str, default='2008-01-01')
     parser.add_argument("--testing_end_date", type=str, default='2009-12-31')
     parser.add_argument("--validation_start_date", type=str, default='2003-01-01')
 

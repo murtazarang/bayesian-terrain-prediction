@@ -2,7 +2,7 @@ import numpy as np
 import pickle
 
 import pandas as pd
-pd.set_option('display.max_columns', None)
+# pd.set_option('display.max_columns', None)
 
 import gc
 
@@ -58,6 +58,7 @@ def load_data(args):
 
     # Split the data for training, and testing before computing the correlation
     train_data, test_data = split_timeseries_data(args, fert_df)
+    print(f'Training Data')
 
     # Now we perform scaling/normalization on the training and omit the validation/target set.
     if args.training_mode == 'train':
@@ -82,8 +83,9 @@ def load_data(args):
     # auto-correlation for each height.
     for h in height_list:
         h_i_data = scale_data_train[h]
-        h_i_mean = h_i_data[h].mean()
+        h_i_mean = h_i_data.mean()
         h_i_var = h_i_data.std()
+        # print(f"Training_{h}")
         h_year_autocorr = get_yearly_autocorr(h_i_data)
         # Standardize for Train
         scaled_data_train[h + '_yearly_corr'] = h_year_autocorr
@@ -92,9 +94,11 @@ def load_data(args):
 
         # Do the same for Test data
         h_i_data = scale_data_test[h]
-        h_i_mean = h_i_data[h].mean()
+        h_i_mean = h_i_data.mean()
         h_i_var = h_i_data.std()
+        # print(f"Testing_{h}")
         h_year_autocorr = get_yearly_autocorr(h_i_data)
+        # print('\n')
         # Standardize for Test
         scaled_data_test[h + '_yearly_corr'] = h_year_autocorr
         scaled_data_test[h] = (scaled_data_test[h] - h_i_mean) / h_i_var
@@ -106,18 +110,18 @@ def load_data(args):
 
     # Drop unnecessary features from Train and Test Data
     if args.model in ['1D', '1d']:
-        scaled_data_train = scaled_data_train.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
-        scaled_data_test = scaled_data_test.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
+        scaled_data_train.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
+        scaled_data_test.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
     elif args.model in ['3D', '3d']:
-        scaled_data_train = scaled_data_train.drop(['day_of_year', 'year'], axis=1, inplace=True)
-        scaled_data_test = scaled_data_test.drop(['day_of_year', 'year'], axis=1, inplace=True)
+        scaled_data_train.drop(['day_of_year', 'year'], axis=1, inplace=True)
+        scaled_data_test.drop(['day_of_year', 'year'], axis=1, inplace=True)
 
     print("General raw metrics for height for (x_0, y_0): ")
     print(fert_df['h1'].describe())
     print('\n')
-    print("Input data: ")
+    # print("Input data: ")
     # print(scaled_data.head())
-    print('\n')
+    # print('\n')
     # print("Input Features")
     # if args.model in ["1d", "1D"]:
     #     print(scaled_data.drop(['date', 'day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1).head())
@@ -160,4 +164,9 @@ def split_timeseries_data(args, data):
 
 def get_yearly_autocorr(data):
     ac = acf(data, nlags=366)
+    # print(np.shape(ac))
     return (0.5 * ac[365]) + (0.25 * ac[364]) + (0.25 * ac[366])
+
+
+def last_year_lag(col):
+    return (col.shift(364) * 0.25) + (col.shift(365) * 0.5) + (col.shift(366) * 0.25)

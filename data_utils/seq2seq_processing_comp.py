@@ -40,42 +40,6 @@ def reduce_mem_usage(df, verbose=True):
     return df
 
 
-def split_sequence_difference(group_data, n_steps_in, n_steps_out, x_cols, y_col, diff, additional_columns):
-    try:
-        X, y = list(), list()
-        additional_col_map = defaultdict(list)
-        group_data[y_col] = group_data[y_col].diff()
-        additional_col_map['x_base'] = []
-        additional_col_map['y_base'] = []
-        additional_col_map['mean_traffic'] = []
-        for i in range(diff, len(group_data)):
-            # find the end of this pattern
-            x_base = group_data.iloc[i - 1]['unmod_y']
-            end_ix = i + n_steps_in
-            out_end_ix = end_ix + n_steps_out
-            # check if we are beyond the dataset
-            if out_end_ix > len(group_data)-1:
-                break
-            y_base = group_data.iloc[end_ix - 1]['unmod_y']
-            # gather input and output parts of the pattern
-            if len(x_cols) == 1:
-                x_cols = x_cols[0]
-            seq_x, seq_y = group_data.iloc[i:end_ix, :][x_cols].values, group_data.iloc[end_ix:out_end_ix, :][y_col].values
-            for col in additional_columns:
-                additional_col_map[col].append(group_data.iloc[end_ix][col])
-            additional_col_map['x_base'].append(x_base)
-            additional_col_map['y_base'].append(y_base)
-            additional_col_map['mean_traffic'] = group_data['unmod_y'].mean()
-            X.append(seq_x)
-            y.append(seq_y)
-        additional_column_items = sorted(additional_col_map.items(), key=lambda x: x[0])
-        return (np.array(X), np.array(y), *[i[1] for i in additional_column_items])
-    except Exception as e:
-        print(e)
-        print(group_data.shape)
-        traceback.print_exc()
-
-
 # split a multivariate sequence into samples
 def split_sequences(group_data, n_steps_in, n_steps_out, x_cols, y_cols, additional_columns, step=1, lag_fns=[]):
     X, y = list(), list()
@@ -96,7 +60,10 @@ def split_sequences(group_data, n_steps_in, n_steps_out, x_cols, y_cols, additio
         # gather input and output parts of the pattern
         if len(x_cols) == 1:
             x_cols = x_cols[0]
-        seq_x, seq_y = group_data.iloc[i:end_ix, :][x_cols].values, group_data.iloc[end_ix:out_end_ix, :][y_cols + [f'lag_{i}' for i in range(len(lag_fns))]].values
+
+        seq_x, seq_y = group_data.iloc[i:end_ix, :][x_cols].values, group_data.iloc[end_ix:out_end_ix, :][
+                                            y_cols + [f'lag_{i}' for i in range(len(lag_fns))]].values
+
         for col in additional_columns:
             additional_col_map[col].append(group_data.iloc[end_ix][col])
         X.append(seq_x)
@@ -106,10 +73,11 @@ def split_sequences(group_data, n_steps_in, n_steps_out, x_cols, y_cols, additio
     return (np.array(X), np.array(y), *[i[1] for i in additional_column_items])
 
 
-def _apply_df(args):
-    df, func, key_column = args
+def apply_df(df, func, key_column):
+    # df, func, key_column = args
     result = df.groupby(key_column).progress_apply(func)
     return result
+
 
 def almost_equal_split(seq, num):
     avg = len(seq) / float(num)
@@ -124,20 +92,24 @@ def almost_equal_split(seq, num):
 def mp_apply(df, func, key_column):
     workers = 6
     # pool = mp.Pool(processes=workers)
-    key_splits = almost_equal_split(df[key_column].unique(), workers)
+    key_splits = almost_equal_split(df[key_column].unique(), workers)  # Dont use this
     split_dfs = [df[df[key_column].isin(key_list)] for key_list in key_splits]
-    result = process_map(_apply_df, [(d, func, key_column) for d in split_dfs], max_workers=workers)
+    result = [apply_df(d, func, key_column) for d in split_dfs]
+    # result = process_map(_apply_df, [(d, func, key_column) for d in split_dfs], max_workers=workers)
     return pd.concat(result)
 
 
-def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, additional_columns, use_log_h = False, lag_fns=[], step=1):
+def sequence_builder(seq_args):
+    args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, additional_columns, use_log_h, lag_fns, step = seq_args
     if args.model in ['1D', '1d']:
-        data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
+        data = pd.read_pickle('./data/processed_data/' + args.model + '_train_processed_data' + '.pkl')
     elif args.model in ['3D', '3d']:
-        data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
+        data = pd.read_pickle('./data/processed_data/' + args.model + '_train_processed_data' + '.pkl')
     else:
         assert "Incorrect model"
         return
+
+    data['key_column'] = 1
 
     if args.compress_data:
         data = reduce_mem_usage(data)
@@ -148,10 +120,11 @@ def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, 
     if args.model in ['1d', '1D']:
         if use_log_h is True:
             data['log_h_final'] = data['log_h1']
-
-        if use_log_h is False:
+        elif use_log_h is False:
             data['h_final'] = data['h1']
             data['h_final_yearly_corr'] = data['h1_yearly_corr']
+            # Calculate Last Year's Lag Fn
+            data['lag_final'] = lag_fns[0](data['h_final'])
 
     elif args.model in ['3d', '3D']:
         if use_log_h is True:
@@ -164,7 +137,9 @@ def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, 
             h_log_aggr_list = list(h_log_aggr_list)
             data['log_h_final'] = h_log_aggr_list
 
-        if use_log_h is False:
+        elif use_log_h is False:
+            # Reshape to 3D Space for all features
+            # Normalized Height
             height_list = ["h" + str(i + 1) for i in range(args.num_features)]  # This is already scaled
             height_yearly_corr = [h + '_yearly_corr' for h in height_list]
             h_aggr_list = np.array([np.array(data[h]) for h in height_list])
@@ -172,8 +147,9 @@ def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, 
             h_aggr_list = np.swapaxes(h_aggr_list, 1, 0)
             h_aggr_list = np.reshape(h_aggr_list, (-1, args.xdim, args.ydim))
             h_aggr_list = list(h_aggr_list)
-            print(len(h_aggr_list))
             data['h_final'] = h_aggr_list
+
+            # Yearly Correlation
             h_corr_aggr_list = np.array([np.array(data[h_corr]) for h_corr in height_yearly_corr])
             # Change to (data_len, num_features) and then move to 3D
             h_corr_aggr_list = np.swapaxes(h_corr_aggr_list, 1, 0)
@@ -181,6 +157,15 @@ def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, 
             h_corr_aggr_list = list(h_corr_aggr_list)
             print(len(h_corr_aggr_list))
             data['h_final_yearly_corr'] = h_corr_aggr_list
+
+            # Last Year's Lag function
+            for h in height_list:
+                data[f'lag_{h}'] = lag_fns[0](data[h])
+            lag_h_aggr_list = np.array([np.array(data[f'lag_{h}']) for h in height_yearly_corr])
+            lag_h_aggr_list = np.swapaxes(lag_h_aggr_list, 1, 0)
+            lag_h_aggr_list = np.reshape(lag_h_aggr_list, (-1, args.xdim, args.ydim))
+            lag_h_aggr_list = list(lag_h_aggr_list)
+            data['h_final_lag'] = lag_h_aggr_list
 
     # first entry in y_cols should be the target variable
     sequence_fn = partial(
@@ -198,7 +183,9 @@ def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, 
         sequence_fn,
         key_column
     )
+    print(sequence_data.head())
     sequence_data = pd.DataFrame(sequence_data, columns=['result'])
+    print(sequence_data.head())
     s = sequence_data.apply(lambda x: pd.Series(zip(*[col for col in x['result']])), axis=1).stack().reset_index(level=1, drop=True)
     s.name = 'result'
     sequence_data = sequence_data.drop('result', axis=1).join(s)
@@ -214,7 +201,6 @@ def sequence_builder(args, n_steps_in, n_steps_out, key_column, x_cols, y_cols, 
     print(sequence_data.shape)
     sequence_data = sequence_data[~sequence_data['x_sequence'].isnull()]
 
-
     return sequence_data
 
 
@@ -222,40 +208,14 @@ def last_year_lag(col): return (col.shift(364) * 0.25) + (col.shift(365) * 0.5) 
 
 
 def seq_data(args):
-    if args.model in ['1D', '1d']:
-        scaled_data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
-    elif args.model in ['3D', '3d']:
-        scaled_data = pd.read_pickle('./data/processed_data/' + args.model + '_processed_data' + '.pkl')
-    else:
-        assert "Incorrect model"
-        return
-
-    if args.compress_data:
-        scaled_data = reduce_mem_usage(scaled_data)
-        print("Compressed Data")
-        # print(scaled_data.head())
-        print('\n')
-
-    height_list = ["h" + str(i + 1) for i in range(args.num_features)]  # This is already scaled
-    log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
-    height_yearly_corr = [h + '_yearly_corr' for h in height_list]
-
-    """
-    # 1D Case
-
-    1. Build Sequence for Log h
-    2. Build Sequence for Min-Max Norm of h
-    3. Save both to separate pickle
-    
-    """
     # Do with Log Height
     selected_columns = ['log_h_final', 'day_of_year_sin', 'day_of_year_cos', 'year_mod']
     additional_columns = ['date']
 
     with mp.Pool(1) as pool:
         log_sequence_data = \
-        pool.map(sequence_builder, [args, args.in_seq_len, args.out_seq_len,
-                                    None, selected_columns, selected_columns, additional_columns, True])[0]
+        pool.map(sequence_builder, [(args, args.in_seq_len, args.out_seq_len,
+                                    'key_column', selected_columns, selected_columns, additional_columns, True, [], 1)])[0]
 
         log_sequence_data.to_pickle('./data/sequence_data/' + args.model + '_log_seq_data' + '.pkl')
 
@@ -265,8 +225,8 @@ def seq_data(args):
 
     with mp.Pool(1) as pool:
         norm_sequence_data = \
-            pool.map(sequence_builder, [args, args.in_seq_len, args.out_seq_len,
-                                        None, selected_columns, selected_columns, additional_columns, False, [last_year_lag]])[0]
+            pool.map(sequence_builder, [(args, args.in_seq_len, args.out_seq_len,
+                                        'key_column', selected_columns, selected_columns, additional_columns, False, [last_year_lag], 1)])[0]
 
         norm_sequence_data.to_pickle('./data/sequence_data/' + args.model + '_corr_seq_data' + '.pkl')
 

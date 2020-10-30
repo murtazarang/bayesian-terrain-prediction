@@ -20,17 +20,41 @@ import plotly.graph_objects as go
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 import pickle
+from collections import deque
 
 from functools import partial
 
+def sliding_window(seq, n=4):
+    it = iter(seq)
+    win = deque((next(it, None) for _ in range(n)), maxlen=n)
+    yield win
+    append = win.append
+    for e in it:
+        append(e)
+        yield win
+
 def test():
+    # for i, j in enumerate(x):
+    #     print(1)
+    # key_column = "store_item_id"
+    # additional_columns = ["store", "item", "data", "yearly_corr"]
+    # x = list(set([key_column] + additional_columns))
+    # print(x)
+
     df = pd.DataFrame()
-
-    x = [np.random.uniform(0, 20, size=(3, 4, 5)) for _ in range(25)]
-
-    df['test_col'] = x
-
+    y = [np.random.uniform(0, 20, size=(2, 2)) for _ in range(6)]
+    df['test_col'] = y
     print(df.head())
+
+    x = list(list(x) for x in sliding_window(y))
+
+    # x = sliding_window(x, n=2)
+    print(x)
+    print(len(x))
+    print(np.shape(x[0]))
+
+
+
 
     # def add(x, a, b):
     #     return x + 10 * a + 100 * b
