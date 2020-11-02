@@ -43,7 +43,15 @@ def test():
 
     df = pd.DataFrame()
     y = [np.random.uniform(0, 20, size=(2, 2)) for _ in range(6)]
-    df['test_col'] = y
+    df['test1'] = y
+    df['test2'] = y
+    df['test3'] = y
+    print(df.head())
+    x = df.iloc[0:2:1, [df.columns.get_loc(f"test{i+1}") for i in range(3)]].values
+    print(np.shape(x))
+    print(x)
+    print(x.head())
+
     print(df.head())
 
     x = list(list(x) for x in sliding_window(y))
