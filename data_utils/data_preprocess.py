@@ -2,8 +2,6 @@ import numpy as np
 import pickle
 
 import pandas as pd
-pd.set_option('display.max_columns', None)
-
 import gc
 
 from sklearn.preprocessing import MinMaxScaler
@@ -60,12 +58,8 @@ def load_data(args):
     train_data, test_data = split_timeseries_data(args, fert_df)
 
     # Now we perform scaling/normalization on the training and omit the validation/target set.
-    if args.training_mode == 'train':
-        scale_data_train = train_data[train_data['date'] < args.validation_start_date]
-        scale_data_test = test_data
-    elif args.training_mode == 'test':
-        scale_data_train = train_data[train_data['date'] < args.training_start_date]
-        scale_data_test = test_data
+    scale_data_train = train_data[train_data['date'] < args.testing_start_date]
+    scale_data_test = test_data
 
     """
     Scaling Train and Test Data Independently
@@ -145,16 +139,8 @@ def split_timeseries_data(args, data):
     # Test: 2008-01-01 ~ 2009-12-31
     print("Timeline of input data: ")
     print(data['date'].min(), " to ", data['date'].max())
-    if args.training_mode == "train":
-        train_data = data[data['date'] < args.testing_start_date]
-        test_data = data[(data['date'] >= args.testing_start_date) & (data['date'] <= args.testing_end_date)]
-
-    elif args.training_mode == "test":
-        train_data = data[(data['date'] >= '1980-01-01') & (data['date'] < args.testing_start_date)]
-        test_data = data[(data['date'] >= args.testing_start_date) & (data['date'] <= args.testing_end_date)]
-    else:
-        assert "Incorrect training mode selected."
-        return
+    train_data = data[data['date'] < args.testing_start_date]
+    test_data = data[(data['date'] >= args.testing_start_date) & (data['date'] <= args.testing_end_date)]
 
     print("Train Data Timeline: ")
     print(train_data['date'].min(), " to ", train_data['date'].max())

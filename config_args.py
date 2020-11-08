@@ -4,6 +4,8 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser("TimeSeries")
 
+    parser.add_argument("--device", type=str, default="cuda", choices=['cuda', 'cpu'])
+
     parser.add_argument("--model", type=str, default="3D", choices=["1D", "1d", "3D", "3d"])
     parser.add_argument("--num_features", type=int, default=100)
     parser.add_argument("--xdim", type=int, default=10)
@@ -13,7 +15,7 @@ def parse_args():
     parser.add_argument("--out_seq_len", type=int, default=30)
 
     parser.add_argument("--epoch", type=int, default=20)
-    parser.add_argument("--batchsize", type=int, default=128)
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=0.001)
 
     parser.add_argument("--train_split", type=int, default=8258)
@@ -36,12 +38,12 @@ def parse_args():
     parser.add_argument("--training_mode", type=str, default="train", choices=["test", "train"])
     parser.add_argument("--testing_start_date", type=str, default='2008-01-01')
     parser.add_argument("--testing_end_date", type=str, default='2009-12-31')
-    parser.add_argument("--validation_start_date", type=str, default='2003-01-01')
+    parser.add_argument("--validation_start_date", type=str, default='2007-01-01')
 
     # Data Processing Requirements
-    parser.add_argument("--load_data", default=True, action='store_true')
+    parser.add_argument("--load_data", default=False, action='store_true')
     parser.add_argument("--sequence_data", default=True, action='store_true')
-    parser.add_argument("--compress_data", default=True, action='store_true')
+    parser.add_argument("--compress_data", default=False, action='store_true')
     parser.add_argument("--dataset", type=str, default='_Fertilizer1dAnnual')
 
     # Features
