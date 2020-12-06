@@ -9,6 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 import tqdm
 from tqdm.notebook import tqdm
 import pickle
+import gc
 
 
 def save_dict(path, name, _dict):
@@ -128,36 +129,63 @@ class TorchTrainer():
             else:
                 self.scheduler.step()
 
+    def _move_to_device(self, inputs, labels, non_blocking=True):
+        def move(obj, device, non_blocking=True):
+            if hasattr(obj, "to"):
+                return obj.to(device, non_blocking=non_blocking)
+            elif isinstance(obj, tuple):
+                return tuple(move(o, device, non_blocking) for o in obj)
+            elif isinstance(obj, list):
+                return [move(o, device, non_blocking) for o in obj]
+            elif isinstance(obj, dict):
+                return {k: move(o, device, non_blocking) for k, o in obj.items()}
+            else:
+                return obj
+
+        inputs = move(inputs, self.device, non_blocking=non_blocking)
+        if labels is not None:
+            labels = move(labels, self.device, non_blocking=non_blocking)
+        return inputs, labels
+
     def _loss_batch(self, xb, yb, optimize, pass_y, additional_metrics=None):
-        if type(xb) is list:
-            xb = [xbi.to(self.device) for xbi in xb]
-        else:
-            xb = xb.to(self.device)
-        yb = yb.to(self.device)
+        xb, yb = self._move_to_device(xb, yb)
+
+        # if type(xb) is list:
+        #     xb = [xbi.to(self.device) for xbi in xb]
+        # else:
+        #     xb = xb.to(self.device)
+        # yb = yb.to(self.device)
         if pass_y:
             y_pred = self.model(xb, yb)
         else:
+            # print(yb.shape)
             y_pred = self.model(xb)
+        # print(f'Label: {yb.size}')
+        # print(f'Preduction Out: {y_pred.size}')
         loss = self.loss_fn(y_pred, yb)
+        # print(loss.isnan().any())
         if additional_metrics is not None:
             additional_metrics = [fn(y_pred, yb) for name, fn in additional_metrics]
         if optimize:
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self._step_optim()
         loss_value = loss.item()
         del xb
         del yb
         del y_pred
         del loss
+        gc.collect()
         if additional_metrics is not None:
             return loss_value, additional_metrics
         return loss_value
 
     def evaluate(self, dataloader):
         self.model.eval()
-        eval_bar = tqdm(dataloader, leave=False)
+        # eval_bar = tqdm(dataloader, leave=False)
         with torch.no_grad():
-            loss_values = [self._loss_batch(xb, yb, False, False, self.additional_metric_fns) for xb, yb in eval_bar]
+            loss_values = [self._loss_batch(xb, yb, False, False, self.additional_metric_fns) for xb, yb in dataloader]
+
             if len(loss_values[0]) > 1:
                 loss_value = np.mean([lv[0] for lv in loss_values])
                 additional_metrics = np.mean([lv[1] for lv in loss_values], axis=0)
@@ -169,28 +197,39 @@ class TorchTrainer():
                 loss_value = np.mean(loss_values)
                 return loss_value, None
 
-    def predict(self, dataloader):
+    def predict(self, dataloader, n_samples=1, plot_phase=False):
         self.model.eval()
         predictions = []
+        y_target = []
         with torch.no_grad():
-            for xb, yb in tqdm(dataloader):
-                if type(xb) is list:
-                    xb = [xbi.to(self.device) for xbi in xb]
-                else:
-                    xb = xb.to(self.device)
-                yb = yb.to(self.device)
-                y_pred = self.model(xb)
-                predictions.append(y_pred.cpu().numpy())
-        return np.concatenate(predictions)
+            for xb, yb in dataloader:
+                xb, yb = self._move_to_device(xb, yb)
+                # if type(xb) is list:
+                #     xb = [xbi.to(self.device) for xbi in xb]
+                # else:
+                #     xb = xb.to(self.device)
+                # yb = yb.to(self.device)
+                y_pred_sample = []
+                for n in range(n_samples):
+                    y_pred = self.model(xb)
+                    y_pred_sample.append(y_pred.cpu().numpy())
+                predictions.append(np.stack(y_pred_sample, axis=1))
+                if plot_phase:
+                    y_target.append(yb.cpu().numpy())
+        if plot_phase:
+            return np.concatenate(predictions), np.concatenate(y_target)
+        else:
+            return np.concatenate(predictions)
 
     # pass single batch input, without batch axis
     def predict_one(self, x):
         self.model.eval()
         with torch.no_grad():
-            if type(x) is list:
-                x = [xi.to(self.device).unsqueeze(0) for xi in x]
-            else:
-                x = x.to(self.device).unsqueeze(0)
+            x, y = self._move_to_device(x, None)
+            # if type(x) is list:
+            #     x = [xi.to(self.device).unsqueeze(0) for xi in x]
+            # else:
+            #     x = x.to(self.device).unsqueeze(0)
             y_pred = self.model(x)
             if self.device == 'cuda':
                 y_pred = y_pred.cpu()
@@ -210,30 +249,40 @@ class TorchTrainer():
             loaded_epoch = self._load_checkpoint(only_model=resume_only_model)
             if loaded_epoch:
                 start_epoch = loaded_epoch
-        for i in tqdm(range(start_epoch, start_epoch + epochs), leave=True):
+        # for i in tqdm(range(start_epoch, start_epoch + epochs), leave=True):
+        for i in range(start_epoch, start_epoch + epochs):
             self.model.train()
             training_losses = []
             running_loss = 0
-            training_bar = tqdm(train_dataloader, leave=False)
-            for it, (xb, yb) in enumerate(training_bar):
+            # print(len(train_dataloader))
+            # training_bar = tqdm(train_dataloader, leave=False)
+            len_bar = len(train_dataloader)
+            # print(f'Length of Training Bar - {len_bar}')
+            for it, (xb, yb) in enumerate(train_dataloader):
                 loss = self._loss_batch(xb, yb, True, self.pass_y)
+                # print(f'Iter: {it}, Loss: {loss}')
                 running_loss += loss
-                training_bar.set_description("loss %.4f" % loss)
-                if it % 100 == 99:
-                    self.writer.add_scalar('training loss', running_loss / 100, i * len(train_dataloader) + it)
-                    training_losses.append(running_loss / 100)
-                    running_loss = 0
-                if self.scheduler is not None and self.scheduler_batch_step:
-                    self._step_scheduler()
+                # training_bar.set_description("loss %.4f" % loss)
+            self.writer.add_scalar('training loss', running_loss / len_bar, i * len(train_dataloader))
+            # print(f'Appending to Training Losses for Iter: {it}')
+            training_losses.append(running_loss / len_bar)
+            # running_loss = 0
+            if self.scheduler is not None and self.scheduler_batch_step:
+                self._step_scheduler()
+            # print(training_losses)
             print(f'Training loss at epoch {i + 1} - {np.mean(training_losses)}')
             if valid_dataloader is not None:
                 valid_loss, additional_metrics = self.evaluate(valid_dataloader)
                 self.writer.add_scalar('validation loss', valid_loss, i)
-                if additional_metrics is not None:
-                    print(additional_metrics)
-                print(f'Valid loss at epoch {i + 1} - {valid_loss}')
+                # if additional_metrics is not None:
+                #     print(additional_metrics)
+                print(f'Valid loss at epoch {i + 1} - {valid_loss} \n')
                 self.valid_losses[i + 1] = valid_loss
             if self.scheduler is not None and not self.scheduler_batch_step:
                 self._step_scheduler(valid_loss)
             if (i + 1) % self.train_checkpoint_interval == 0:
                 self._save_checkpoint(i + 1)
+            del xb
+            del yb
+
+            gc.collect()

@@ -4,6 +4,8 @@ import numpy as np
 
 import warnings
 warnings.filterwarnings('ignore')
+from config_args import parse_args
+import scipy.io
 
 from tqdm.notebook import tqdm
 tqdm.pandas()
@@ -17,6 +19,7 @@ from statsmodels.tsa.stattools import acf, pacf
 import plotly.express as px
 import plotly.graph_objects as go
 
+from data_utils.data_postprocess import plot_surface
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 import pickle
@@ -72,7 +75,23 @@ class Net(nn.Module):
 
 
 
+
+
+
 def test():
+    args = parse_args()
+    fert_df = pd.read_csv("./data/Fertilizer3dAnnual.csv")
+    height_list = ["h" + str(np.random.randint(0, 10000, size=1)[0]) for i in range(10)]
+    fig = go.Figure()
+    for h in height_list:
+        x = fert_df[h].iloc[:750]
+        fig.add_trace(go.Scatter(x=x, y=list(range(len(x))),
+                                 mode='lines+markers',
+                                 name=h))
+        fig.show()
+
+    # dil_val = [1 if i != 0 else 3 for i in range(10)]
+    # print(dil_val)
     # for i, j in enumerate(x):
     #     print(1)
     # key_column = "store_item_id"
@@ -80,25 +99,93 @@ def test():
     # x = list(set([key_column] + additional_columns))
     # print(x)
 
-    df = pd.DataFrame()
-    y = [np.random.uniform(0, 20, size=(2, 2)) for _ in range(6)]
-    df['test1'] = y
-    df['test2'] = y
-    df['test3'] = y
-    print(df.head())
-    x = df.iloc[0:2:1, [df.columns.get_loc(f"test{i+1}") for i in range(3)]].values
-    print(np.shape(x))
-    print(x)
-    print(x.head())
+    # sequence_data = pd.read_pickle('./data/sequence_data/' + '3D' + '_seq_data' + '.pkl')
+    # label_3d = []
+    # with open('./data/sequence_data/numpy/' + args.model + '_train_seq_data_' + str(args.in_seq_len) + '_' +
+    #           str(args.out_seq_len) + '.pkl', 'rb') as fp:
+    #     try:
+    #         while True:
+    #             train_sequence_data.append(pickle.load(fp))
+    #     except EOFError:
+    #         pass
+    # label_3d = pickle.load(open('./data/sequence_data/numpy/' + args.model + '_y_label_seq_data_' + str(args.in_seq_len) + '_' +
+    #           str(args.out_seq_len) + '.pkl', 'rb+'))
+    #
+    # print(np.stack(label_3d))
+    #
+    # scipy.io.savemat('./data/sequence_data/numpy/' + args.model + '_y_label_seq_data_' + str(args.in_seq_len) + '_' +
+    #           str(args.out_seq_len) + '.mat', mdict={'Target100x100': label_3d})
 
-    print(df.head())
+    # fert_df = pd.read_csv("./data/Fertilizer3dAnnual.csv")
+    # height_list = ["h" + str(i + 1) for i in range(10000)]
+    # z_log_com = []
+    # z_log = []
+    # z = []
+    # for i, h in enumerate(height_list):
+    #     z.append(fert_df[h].iloc[[0, 5, 10, 10, 20, 30]])
+    #     fert_df['log_h' + str(i + 1)] = np.log(fert_df[h])
+    #     z_log.append(fert_df['log_h' + str(i + 1)].iloc[[0, 5, 10, 15, 20, 30]])
+    #     # Compress it since it blows up the dataframe size
+    #     c_min = fert_df['log_h' + str(i + 1)].min()
+    #     c_max = fert_df['log_h' + str(i + 1)].max()
+    #     # if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+    #     #     fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float16)
+    #     # elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+    #     #     fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float32)
+    #     # else:
+    #     #     fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float64)
+    #
+    #     z_log_com.append(fert_df['log_h' + str(i + 1)].iloc[[0, 5, 10, 15, 20, 25, 30]])
+    #
+    # # Reshaping Operations
+    # z = np.array(z)
+    # z_log = np.array(z_log)
+    # z_log_com = np.array(z_log_com)
+    #
+    # print(np.shape(z))
+    # print(np.shape(z_log))
+    # print(np.shape(z_log_com))
+    #
+    # z = reshape_inputs(z)
+    # z_log = reshape_inputs(z_log)
+    # z_log_com = reshape_inputs(z_log_com)
+    #
+    # idxs = [0, 5, 10, 15, 20, 25, 30]
+    # for i in range(len(idxs)):
+    #     plot_surface(z[i], f"Untouched: {i}")
+    #     plot_surface(z_log[i], f"Log: {i}")
+    #     plot_surface(z_log_com[i], f"Log Compressed: {i}")
+    #
 
-    x = list(list(x) for x in sliding_window(y))
+def reshape_inputs(z):
+    n_feat, idx = z.shape
+    z = np.swapaxes(z, 0, 1)
+    z = np.reshape(z, (idx, 100, 100))
+    return z
 
-    # x = sliding_window(x, n=2)
-    print(x)
-    print(len(x))
-    print(np.shape(x[0]))
+
+
+
+
+    # df = pd.DataFrame()
+    # y = [np.random.uniform(0, 20, size=(2, 2)) for _ in range(6)]
+    # df['test1'] = y
+    # df['test2'] = y
+    # df['test3'] = y
+    # print(df.head())
+    # x = df.iloc[0:2:1, [df.columns.get_loc(f"test{i+1}") for i in range(3)]].values
+    # print(np.shape(x))
+    # print(x)
+    # print(x.head())
+    #
+    # print(df.head())
+    #
+    # x = list(list(x) for x in sliding_window(y))
+    #
+    # # x = sliding_window(x, n=2)
+    # print(x)
+    # print(len(x))
+    # print(np.shape(x[0]))
 
 
 
@@ -191,12 +278,12 @@ def get_yearly_autocorr(data):
     return (0.5 * ac[365]) + (0.25 * ac[364]) + (0.25 * ac[366])
 
 if __name__ == '__main__':
-    # test()
-
-    net = Net()
-    print(net)
-
-    input = torch.randn(1, 1, 100, 100)
-    print(input.data.size())
-    out = net(input)
-    print(out.data.size())
+    test()
+    #
+    # net = Net()
+    # print(net)
+    #
+    # input = torch.randn(1, 1, 100, 100)
+    # print(input.data.size())
+    # out = net(input)
+    # print(out.data.size())

@@ -6,31 +6,39 @@ import multiprocessing as mp
 from functools import partial
 from collections import deque
 
+import sys
+
 
 # Load and Save Sequence to Pickle
-def seq_builder(args):
+def seq_builder(argv):
+    args, feature_list = argv
+    # feature_list = ['h_in', 'log_h_in', 'h_yearly_corr', 'day_of_year_cos', 'day_of_year_sin', 'year_mod']
     if args.model in ['1D', '1d']:
         scaled_data = pd.read_pickle('./data/processed_data/' + args.model + '_train_processed_data' + '.pkl')
     elif args.model in ['3D', '3d']:
         scaled_data = pd.read_pickle('./data/processed_data/' + args.model + '_train_processed_data' + '.pkl')
     else:
         assert "Incorrect model"
-        return
+        sys.exit()
 
-    height_list = ["h" + str(i + 1) for i in range(args.num_features)]
-    height_yearly_corr_list = [h + '_yearly_corr' for h in height_list]
-    log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
-    feature_list = ['h_in', 'log_h_in', 'h_yearly_corr', 'day_of_year_cos', 'day_of_year_sin', 'year_mod']
+    # height_list = ["h" + str(i + 1) for i in range(args.num_features)]
+    # height_yearly_corr_list = [h + '_yearly_corr' for h in height_list]
+    # log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
 
-    print("Reshaping Inputs")
+    print("Starting Sequencing Inputs")
     if args.model in ['1d', '1D']:
+        if args.use_log_h:
             scaled_data['log_h_in'] = scaled_data['log_h1']
+        else:
             scaled_data['h_in'] = scaled_data['h1']
+        if args.use_yr_corr:
             scaled_data['h_yearly_corr'] = scaled_data['h1_yearly_corr']
-            drop_features_list = [h for h in list(scaled_data.columns)
+
+        drop_features_list = [h for h in list(scaled_data.columns)
                             if h not in feature_list + ['date']]
 
     elif args.model in ['3d', '3D']:
+        if args.use_log_h:
             log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
             # Produces [num_features, data_length]
             h_log_aggr_list = np.array([np.array(scaled_data[h]) for h in log_height_list])
@@ -48,8 +56,8 @@ def seq_builder(args):
 
             # Reshape to 3D Space for all features
             # Normalized Height
+        else:
             height_list = ["h" + str(i + 1) for i in range(args.num_features)]  # This is already scaled
-            height_yearly_corr = [h + '_yearly_corr' for h in height_list]
             h_aggr_list = np.array([np.array(scaled_data[h]) for h in height_list])
             # Change to (data_len, num_features) and then move to 3D
             h_aggr_list = np.swapaxes(h_aggr_list, 1, 0)
@@ -57,15 +65,18 @@ def seq_builder(args):
             h_aggr_list = list(h_aggr_list)
             scaled_data['h_in'] = h_aggr_list
 
-            # Yearly Correlation
-            h_corr_aggr_list = np.array([np.array(scaled_data[h_corr]) for h_corr in height_yearly_corr])
-            # Change to (data_len, num_features) and then move to 3D
-            h_corr_aggr_list = np.swapaxes(h_corr_aggr_list, 1, 0)
-            h_corr_aggr_list = np.reshape(h_corr_aggr_list, (-1, args.xdim, args.ydim))
-            h_corr_aggr_list = list(h_corr_aggr_list)
-            scaled_data['h_yearly_corr'] = h_corr_aggr_list
-            drop_features_list = [h for h in list(scaled_data.columns)
-                            if h not in feature_list + ['date']]
+            if args.use_yr_corr:
+                # Yearly Correlation
+                height_yearly_corr = [h + '_yearly_corr' for h in height_list]
+                h_corr_aggr_list = np.array([np.array(scaled_data[h_corr]) for h_corr in height_yearly_corr])
+                # Change to (data_len, num_features) and then move to 3D
+                h_corr_aggr_list = np.swapaxes(h_corr_aggr_list, 1, 0)
+                h_corr_aggr_list = np.reshape(h_corr_aggr_list, (-1, args.xdim, args.ydim))
+                h_corr_aggr_list = list(h_corr_aggr_list)
+                scaled_data['h_yearly_corr'] = h_corr_aggr_list
+
+        drop_features_list = [h for h in list(scaled_data.columns)
+                        if h not in feature_list + ['date']]
     else:
         return
 
@@ -83,7 +94,8 @@ def seq_builder(args):
     sequence_data['date'] = scaled_data['date']
     print(f'Sequenced Features: \n {sequence_data.head()} \n \n')
 
-    sequence_data.to_pickle('./data/sequence_data/' + args.model + '_seq_data' + '.pkl')
+    sequence_data.to_pickle('./data/sequence_data/' + args.model + '_seq_data_' + str(args.in_seq_len) + '_' +
+                  str(args.out_seq_len) + '.pkl')
 
 
 # Make sure h_in is the first
