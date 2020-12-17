@@ -20,39 +20,45 @@ def load_data(args):
         if args.xdim * args.ydim != args.num_features:
             assert "Incorrect Feature Dimensions"
         fert_df = pd.read_csv("./data/Fertilizer3dAnnual.csv")
-
     else:
         assert "Invalid Input Model Selected"
         return
 
+    """
+    Common Features
+    """
     fert_df["date"] = pd.to_datetime(fert_df["date"])
     # Drop the single day of 2010
     fert_df.drop(fert_df[fert_df.date == '2010-01-01'].index, inplace=True)
-
-    # Alleviate exponential effects, transform the target variable with log-transformation
-    # https://arxiv.org/abs/1709.01907
     height_list = ["h" + str(i + 1) for i in range(args.num_features)]
-    for i, h in enumerate(height_list):
-        fert_df['log_h' + str(i + 1)] = np.log(fert_df[h])
+
+    if args.use_log_h:
+        print("Computing Log Heights")
+        # Alleviate exponential effects, transform the target variable with log-transformation
+        # https://arxiv.org/abs/1709.01907
+        for i, h in enumerate(height_list):
+            fert_df['log_h' + str(i + 1)] = np.log(fert_df[h])
+            fert_df.drop([h], axis=1, inplace=True)
         # Compress it since it blows up the dataframe size
-        c_min = fert_df['log_h' + str(i + 1)].min()
-        c_max = fert_df['log_h' + str(i + 1)].max()
-        if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
-            fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float16)
-        elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
-            fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float32)
-        else:
-            fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float64)
+        # c_min = fert_df['log_h' + str(i + 1)].min()
+        # c_max = fert_df['log_h' + str(i + 1)].max()
+        # if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+        #     fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float16)
+        # elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+        #     fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float32)
+        # else:
+        #     fert_df['log_h' + str(i + 1)] = fert_df['log_h' + str(i + 1)].astype(np.float64)
 
     # log_height_list = ["log_h" + str(i + 1) for i in range(args.num_features)]
 
-    # Specify cyclical nature of the data per year with sine/cosine date values
-    # https: // ianlondon.github.io / blog / encoding - cyclical - features - 24hour - time /
-    fert_df['day_of_year_sin'] = np.sin(2 * np.pi * fert_df["day_of_year"] / DAYS_IN_A_YEAR)
-    fert_df['day_of_year_cos'] = np.cos(2 * np.pi * fert_df["day_of_year"] / DAYS_IN_A_YEAR)
+    if args.use_add_features:
+        # Specify cyclical nature of the data per year with sine/cosine date values
+        # https: // ianlondon.github.io / blog / encoding - cyclical - features - 24hour - time /
+        fert_df['day_of_year_sin'] = np.sin(2 * np.pi * fert_df["day_of_year"] / DAYS_IN_A_YEAR)
+        fert_df['day_of_year_cos'] = np.cos(2 * np.pi * fert_df["day_of_year"] / DAYS_IN_A_YEAR)
 
-    # Normalize the year
-    fert_df["year_mod"] = (fert_df['year'] - fert_df['year'].min()) / (fert_df['year'].max() - fert_df['year'].min())
+        # Normalize the year
+        fert_df["year_mod"] = (fert_df['year'] - fert_df['year'].min()) / (fert_df['year'].max() - fert_df['year'].min())
 
     # Split the data for training, and testing before computing the correlation
     train_data, test_data = split_timeseries_data(args, fert_df)
@@ -64,6 +70,7 @@ def load_data(args):
     """
     Scaling Train and Test Data Independently
     """
+    print("Scaling Data")
     scale_map_train = {}
     scaled_data_train = pd.DataFrame()
     scaled_data_train = pd.concat([scaled_data_train, scale_data_train], ignore_index=True)
@@ -74,33 +81,37 @@ def load_data(args):
 
     # To capture the yearly trend of the fertilizer height we also standardize and compute the yearly
     # auto-correlation for each height.
-    for h in height_list:
-        h_i_data = scale_data_train[h]
-        h_i_mean = h_i_data.mean()
-        h_i_var = h_i_data.std()
-        # print(f"Training_{h}")
-        h_year_autocorr = get_yearly_autocorr(h_i_data)
-        # Standardize for Train
-        scaled_data_train[h + '_yearly_corr'] = h_year_autocorr
-        scaled_data_train[h] = (scaled_data_train[h] - h_i_mean) / h_i_var
-        scale_map_train[h] = {'mu': h_i_mean, 'sigma': h_i_var}
+    print("Normalizing Data")
+    if args.use_log_h:
+        for h in height_list:
+            scaled_data_train['log_' + h] = (scaled_data_train['log_' + h] - scale_data_train['log_' + h].min()) / \
+                                            (scale_data_train['log_' + h].max() - scale_data_train['log_' + h].min())
+            scale_map_train['log_' + h] = {'log_min': scale_data_train['log_' + h].min(),
+                                           'log_max': scale_data_train['log_' + h].max()}
 
-        # Do the same for Test data
-        h_i_data = scale_data_test[h]
-        h_i_mean = h_i_data.mean()
-        h_i_var = h_i_data.std()
-        # print(f"Testing_{h}")
-        h_year_autocorr = get_yearly_autocorr(h_i_data)
-        # print('\n')
-        # Standardize for Test
-        scaled_data_test[h + '_yearly_corr'] = h_year_autocorr
-        scaled_data_test[h] = (scaled_data_test[h] - h_i_mean) / h_i_var
-        scale_map_test[h] = {'mu': h_i_mean, 'sigma': h_i_var}
+            scaled_data_test['log_' + h] = (scaled_data_test['log_' + h] - scale_data_test['log_' + h].mean()) / \
+                                           scale_data_test['log_' + h].std()
+            scale_map_test['log_' + h] = {'log_min_test': scale_data_test['log_' + h].min(),
+                                          'log_max_test': scale_data_test['log_' + h].max()}
+
+    else:
+        for h in height_list:
+            scaled_data_train[h] = (scaled_data_train[h] - scale_data_train[h].min()) / \
+                                   (scale_data_train[h].max() - scale_data_train[h].min())
+            scale_map_train[h] = {'min_train': scale_data_train[h].min(), 'max_train': scale_data_train[h].max()}
+            # print('\n')
+            # Standardize for Test
+            scaled_data_test[h] = (scaled_data_test[h] - scale_data_test[h].min()) / (scale_data_test[h].max() - scale_data_test[h].min())
+            scale_map_test[h] = {'min_test': scale_data_test[h].mean(), 'max_test': scale_data_test[h].max()}
+
+            if args.use_yr_corr:
+                scaled_data_train[h + '_yearly_corr'] = get_yearly_autocorr(scale_data_train[h])
+                scaled_data_test[h + '_yearly_corr'] = get_yearly_autocorr(scale_data_test[h])
 
     # yearly_autocorr_height_list = [h + '_yearly_corr' for h in height_list]
     # selected_columns = ['date', 'day_of_year', 'year', 'day_of_year_sin', 'day_of_year_cos', 'year_mod'] + height_list \
     #                     + log_height_list + yearly_autocorr_height_list
-
+    
     # Drop unnecessary features from Train and Test Data
     if args.model in ['1D', '1d']:
         scaled_data_train.drop(['day_of_year', 'year', 'drymatter', 'heightchange', 'cover'], axis=1, inplace=True)
@@ -109,9 +120,9 @@ def load_data(args):
         scaled_data_train.drop(['day_of_year', 'year'], axis=1, inplace=True)
         scaled_data_test.drop(['day_of_year', 'year'], axis=1, inplace=True)
 
-    print("General raw metrics for height for (x_0, y_0): ")
-    print(fert_df['h1'].describe())
-    print('\n')
+    # print("General raw metrics for height for (x_0, y_0): ")
+    # print(fert_df['h1'].describe())
+    # print('\n')
     # print("Input data: ")
     # print(scaled_data.head())
     # print('\n')
