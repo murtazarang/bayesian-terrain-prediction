@@ -9,13 +9,11 @@
 * Create a new conda environment using the dependency file in the project folder.
 
 ```
-bash
 conda env create -f environment.yml
 ```
 
 * Activate the environment to run the training or testing scripts.
 ```
-bash
 conda activate ag-bay-torch
 ```
 
@@ -39,12 +37,10 @@ sliding window inputs for the network.
 
 ## Prediction/Testing
 ```
-bash
 python main.py --in_seq_len IN_VALUE --out_seq_len OUT_VALUE --load_data --sequence_data --sequence_to_np
 ```
 
 ## Training
 ```
-bash
 python main.py --train_network --in_seq_len IN_VALUE --out_seq_len OUT_VALUE --load_data --sequence_data --sequence_to_np
 ```
