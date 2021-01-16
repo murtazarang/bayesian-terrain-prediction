@@ -44,3 +44,11 @@ python main.py --in_seq_len IN_VALUE --out_seq_len OUT_VALUE --load_data --seque
 ```
 python main.py --train_network --in_seq_len IN_VALUE --out_seq_len OUT_VALUE --load_data --sequence_data --sequence_to_np
 ```
+
+## Output
+Output is stored as a MATLAB file in `.mat` file. Data is stored in the following dictionaries.
+
+* `date`: Start date of the first day of the sequence. That is, the first date of the start of the input sequence.
+* `y_pred_mean`: Mean prediction/inference output from different prediction samples: `--n_samples VALUE`. Dimension is `(batch, out_seq_len, x_dim, y_dim)`
+* `y_std_mean`: Standard Deviation of the prediction/inference output from different prediction samples: `--n_samples VALUE`. Dimension is `(batch, out_seq_len, x_dim, y_dim)`
+* `y_target`: Ground truth/Target values for the predicted output. Dimension is `(batch, out_seq_len, x_dim, y_dim)`

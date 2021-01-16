@@ -5,7 +5,7 @@ def parse_args():
     parser = argparse.ArgumentParser("TimeSeries")
 
     parser.add_argument("--exp_name", type=str, default='skip_in_convlst_10_10')
-    parser.add_argument("--predict_run", type=str, default='1')
+    parser.add_argument("--predict_run", type=str, default='0')
     parser.add_argument("--lr_search", default=False, action='store_true')
     parser.add_argument("--train_network", default=False, action='store_true')
 
@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--out_seq_len", type=int, default=10)
 
     parser.add_argument("--epoch", type=int, default=400)
-    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1.32E-05)
     parser.add_argument("--lr_decay", type=float, default=1.0E-06)
 
@@ -76,7 +76,5 @@ def parse_args():
 
     # Model type
     parser.add_argument("--use3d_autoencoder", default=True, action='store_true')
-
-    # Test Time
 
     return parser.parse_args()

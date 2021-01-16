@@ -32,10 +32,10 @@ import multiprocessing as mp
 
 from config_args import parse_args
 from data_utils.data_preprocess import load_data
-from data_utils.sequence_builder import seq_builder, np_to_csv
+from data_utils.sequence_builder import seq_builder
 from data_utils.seq_loader import load_seq_as_np
 from data_utils.data_loader import ItemDataset, ItrDataset
-from data_utils.data_postprocess import plot_surface
+from data_utils.data_postprocess import plot_surface, np_to_csv
 
 from trainer_utils.trainer import TorchTrainer
 from networks.encoder import LSTMEncoder, ConvLSTMEncoder
