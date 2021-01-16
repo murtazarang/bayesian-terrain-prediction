@@ -74,7 +74,7 @@ class TorchTrainer():
         print(f'saved checkpoint for epoch {epoch}')
         self._clean_outdated_checkpoints()
 
-    def load_checkpoint(self, epoch=None, only_model=False, name=None):
+    def _load_checkpoint(self, epoch=None, only_model=False, name=None):
         if name is None:
             checkpoints = self._get_checkpoints()
         else:
@@ -105,7 +105,7 @@ class TorchTrainer():
     def _load_best_checkpoint(self):
         if self.valid_losses:
             best_epoch = sorted(self.valid_losses.items(), key=lambda x: x[1])[0][0]
-            loaded_epoch = self.load_checkpoint(epoch=best_epoch, only_model=True)
+            loaded_epoch = self._load_checkpoint(epoch=best_epoch, only_model=True)
 
     def _step_optim(self):
         if type(self.optimizer) is list:
@@ -184,7 +184,7 @@ class TorchTrainer():
         self.model.eval()
         # eval_bar = tqdm(dataloader, leave=False)
         with torch.no_grad():
-            loss_values = [self._loss_batch(xb, yb[0], False, False, self.additional_metric_fns) for xb, yb in dataloader]
+            loss_values = [self._loss_batch(xb, yb, False, False, self.additional_metric_fns) for xb, yb in dataloader]
 
             if len(loss_values[0]) > 1:
                 loss_value = np.mean([lv[0] for lv in loss_values])
@@ -201,11 +201,9 @@ class TorchTrainer():
         self.model.eval()
         predictions = []
         y_target = []
-        y_date = []
         with torch.no_grad():
             for xb, yb in dataloader:
-                y_date.append(yb[-1])
-                xb, yb = self._move_to_device(xb, yb[0])
+                xb, yb = self._move_to_device(xb, yb)
                 # if type(xb) is list:
                 #     xb = [xbi.to(self.device) for xbi in xb]
                 # else:
@@ -217,10 +215,9 @@ class TorchTrainer():
                     y_pred_sample.append(y_pred.cpu().numpy())
                 predictions.append(np.stack(y_pred_sample, axis=1))
                 if plot_phase:
-                    y_target.append(yb[0].cpu().numpy())
-
+                    y_target.append(yb.cpu().numpy())
         if plot_phase:
-            return np.concatenate(predictions), np.concatenate(y_target), np.concatenate(y_date)
+            return np.concatenate(predictions), np.concatenate(y_target)
         else:
             return np.concatenate(predictions)
 
@@ -249,7 +246,7 @@ class TorchTrainer():
     def train(self, epochs, train_dataloader, valid_dataloader=None, resume=True, resume_only_model=False):
         start_epoch = 0
         if resume:
-            loaded_epoch = self.load_checkpoint(only_model=resume_only_model)
+            loaded_epoch = self._load_checkpoint(only_model=resume_only_model)
             if loaded_epoch:
                 start_epoch = loaded_epoch
         # for i in tqdm(range(start_epoch, start_epoch + epochs), leave=True):
@@ -262,7 +259,7 @@ class TorchTrainer():
             len_bar = len(train_dataloader)
             # print(f'Length of Training Bar - {len_bar}')
             for it, (xb, yb) in enumerate(train_dataloader):
-                loss = self._loss_batch(xb, yb[0], True, self.pass_y)
+                loss = self._loss_batch(xb, yb, True, self.pass_y)
                 # print(f'Iter: {it}, Loss: {loss}')
                 running_loss += loss
                 # training_bar.set_description("loss %.4f" % loss)

@@ -1,6 +1,7 @@
 import tqdm
 import numpy as np
 import pandas as pd
+import csv
 
 import multiprocessing as mp
 from functools import partial
@@ -92,7 +93,7 @@ def seq_builder(argv):
     # sequence_data['x_seq'] = X_seq
         sequence_data['y_seq_' + f] = y_seq[i]
     sequence_data['date'] = scaled_data['date']
-    print(f'Sequenced Features for {data_type}: \n {sequence_data.head()} \n \n')
+    print(f'Sequenced Features: \n {sequence_data.head()} \n \n')
 
     sequence_data.to_pickle('./data/sequence_data/' + args.model + '_' + data_type + '_seq_data_' + str(args.in_seq_len) + '_' +
                   str(args.out_seq_len) + '.pkl')
@@ -120,7 +121,36 @@ def create_sliding_win(args, data, feature_list, stride=1):
 
     return X_list, y_list
 
+# Reshape to feed to Matlab
+def np_to_csv(y_pred_mean, y_pred_std, y_target, y_date, args):
+    # Flatten the 3D data, and unroll over the whole sequence
+    seq_len = y_pred_mean.shape[1]
+    print(f'pred: {y_pred_mean.shape}, target: {y_target.shape}, date: {y_date.shape}')
+    y_pred_mean = y_pred_mean.reshape(y_pred_mean.shape[0], y_pred_mean.shape[1], -1)
+    y_pred_mean = y_pred_mean.reshape(y_pred_mean.shape[0], -1)
 
+    y_pred_std = y_pred_std.reshape(y_pred_std.shape[0], y_pred_std.shape[1], -1)
+    y_pred_std = y_pred_std.reshape(y_pred_std.shape[0], -1)
+
+    y_target = y_target.reshape(y_target.shape[0], y_target.shape[1], -1)
+    y_target = y_target.reshape(y_target.shape[0], -1)
+    y_final = np.concatenate((y_date, y_pred_mean, y_pred_std, y_target), axis=-1)
+
+    y_pred_f_t = []
+    y_pred_std_f_t = []
+    y_target_f_t = []
+
+    for t in range(seq_len):
+        y_pred_f_t += ['h_pred_mean_' + str(f) + '_' + str(t) for f in range(args.num_features)]
+        y_pred_std_f_t += ['h_pred_std_' + str(f) + '_' + str(t) for f in range(args.num_features)]
+        y_target_f_t += ['h_target_' + str(f) + '_' + str(t)for f in range(args.num_features)]
+
+    pred_features = ['date'] + y_pred_f_t + y_pred_std_f_t + y_target_f_t
+
+    with open('./data/prediction_data/' + args.model + '_predict_data_' + args.predict_run + '.csv', 'w') as pred_csv:
+        csvWriter = csv.writer(pred_csv, delimiter=',', lineterminator='\n')
+        csvWriter.writerow(pred_features)
+        csvWriter.writerows(y_final)
 # Usage
 # x = list(list(x) for x in sliding_window(y))
 # def sliding_window(seq, n=4):

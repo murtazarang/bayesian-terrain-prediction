@@ -1,9 +1,4 @@
 from torch.utils.data import Dataset, IterableDataset, DataLoader
-from data_utils.seq_loader import np_to_csv
-
-from config_args import parse_args
-
-import numpy as np
 
 
 class CustomIterableDatasetv1(IterableDataset):
@@ -38,26 +33,19 @@ class CustomIterableDatasetv1(IterableDataset):
 
 
 def main():
-    args = parse_args()
-    x_pred = np.random.uniform(0, 1, size=(32, 10, 5, 5))
-    y_pred = np.random.uniform(0, 1, size=(32, 10, 5, 5))
-    x_date = np.random.uniform(0, 1, size=(32, 10, 1))
-    np_to_csv(x_pred, y_pred, x_date, args)
+    dataset = CustomIterableDatasetv1('./data/test.csv')
+    dataloader = DataLoader(dataset, batch_size=64)
 
-    #
-    # dataset = CustomIterableDatasetv1('./data/test.csv')
-    # dataloader = DataLoader(dataset, batch_size=64)
-    #
-    # x = next(iter(dataloader))
-    # print(x)
-    #
-    # for X in dataloader:
-    #     print(len(X))  # 64
-    #     # print(y.shape)  # (64,)
-    #
-    #     ### Do something with X and y
-    #
-    #     ###
+    x = next(iter(dataloader))
+    print(x)
+
+    for X in dataloader:
+        print(len(X))  # 64
+        # print(y.shape)  # (64,)
+
+        ### Do something with X and y
+
+        ###
 
 
 if __name__ == '__main__':

@@ -32,11 +32,10 @@ import multiprocessing as mp
 
 from config_args import parse_args
 from data_utils.data_preprocess import load_data
-from data_utils.sequence_builder import seq_builder
-from data_utils.seq_loader import load_seq_as_np, np_to_csv
-from data_utils.data_loader import ItemDataset
+from data_utils.sequence_builder import seq_builder, np_to_csv
+from data_utils.seq_loader import load_seq_as_np
+from data_utils.data_loader import ItemDataset, ItrDataset
 from data_utils.data_postprocess import plot_surface
-from data_utils.directory_checks import dir_checks
 
 from trainer_utils.trainer import TorchTrainer
 from networks.encoder import LSTMEncoder, ConvLSTMEncoder
@@ -47,6 +46,33 @@ from networks.encoderdecoder2 import EncoderDecoderWrapper3d
 torch.manual_seed(420)
 np.random.seed(420)
 
+def dir_checks(args):
+    process_dir = Path('./data/processed_data')
+    if not process_dir.exists():
+        os.makedirs(process_dir)
+
+    seq_dir = Path('./data/sequence_data/numpy/')
+    if not seq_dir.exists():
+        os.makedirs(seq_dir)
+
+    pred_dir = Path('./data/prediction_data')
+    if not pred_dir.exists():
+        os.makedirs(pred_dir)
+
+    train_file = Path('./data/sequence_data/numpy/' + args.model + '_train_seq_data_' + str(args.in_seq_len) + '_' +
+                      str(args.out_seq_len) + '.h5')
+    test_file = Path('./data/sequence_data/numpy/' + args.model + '_test_seq_data_' + str(args.in_seq_len) + '_' +
+                     str(args.out_seq_len) + '.h5')
+
+    if train_file.exists():
+        print("Train File Seq Exists")
+        sys.exit()
+
+    if test_file.exists():
+        print("Test File Seq Exists")
+        sys.exit()
+
+    return
 
 def train():
     # Parse arguments and load data
@@ -54,8 +80,8 @@ def train():
     load_train_data = False
     if args.lr_search or args.train_network:
         load_train_data = True
-
-    dir_checks(args)
+    if args.load_data or args.sequence_data or args.sequence_to_np:
+        dir_checks(args)
 
     # If new dataset is to be loaded and processed with scaling/norms etc, then
     # Create batches of input sequence and output sequence that needs to be predicted
@@ -71,28 +97,22 @@ def train():
     if args.use_add_features:
         feature_list += ['day_of_year_cos', 'day_of_year_sin', 'year_mod']
 
-    feature_list.append('date')
-
     if args.load_data:
         with mp.Pool(12) as pool:
             result = pool.map(load_data, [args])[0]
         # with mp.Pool(12) as pool:
         #     result = pool.map(seq_builder, [(args, feature_list)])[0]
-    if args.sequence_train_data:
+    if args.sequence_data:
         with mp.Pool(12) as pool:
             result = pool.map(seq_builder, [(args, feature_list, 'train')])[0]
-
-    if args.sequence_test_data:
         with mp.Pool(12) as pool:
             result = pool.map(seq_builder, [(args, feature_list, 'test')])[0]
-
     if args.sequence_to_np:
         # seq_np_data = []
         pool = mp.Pool(12)
-        if not args.training_mode == 'test':
-            train_hf = h5py.File(
-                './data/sequence_data/numpy/' + args.model + '_train_seq_data_' + str(args.in_seq_len) + '_' +
-                str(args.out_seq_len) + '.h5', 'w')
+        train_hf = h5py.File(
+            './data/sequence_data/numpy/' + args.model + '_train_seq_data_' + str(args.in_seq_len) + '_' +
+            str(args.out_seq_len) + '.h5', 'w')
         test_hf = h5py.File(
             './data/sequence_data/numpy/' + args.model + '_test_seq_data_' + str(args.in_seq_len) + '_' +
             str(args.out_seq_len) + '.h5', 'w')
@@ -100,16 +120,18 @@ def train():
         # train_seq, test_seq = [], []
         for f in range(2 * len(feature_list)):
             print(f"Working with {f}")
-            result = pool.map(load_seq_as_np, [(args, feature_list, f)])[0]
+            result = pool.map(load_seq_as_np, [(args, feature_list, f, False)])[0]
             train_seq_f, test_seq_f = result
-            if not args.training_mode == 'test':
-                train_hf.create_dataset('train' + str(f), data=np.asarray(train_seq_f))
+            train_hf.create_dataset('train' + str(f), data=np.asarray(train_seq_f))
             test_hf.create_dataset('test' + str(f), data=np.asarray(test_seq_f))
             # train_seq.append(train_seq_f)
             # test_seq.append(test_seq_f)
 
-        if not args.training_mode == 'test':
-            train_hf.close()
+        result = pool.map(load_seq_as_np, [(args, feature_list, f, True)])[0]
+        _, test_seq_date = result
+        test_hf.create_dataset('testdate', data=test_seq_date.astype('S10'))
+
+        train_hf.close()
         test_hf.close()
 
         # with open('./data/sequence_data/numpy/' + args.model + '_train_seq_data_' + str(args.in_seq_len) + '_' +
@@ -166,45 +188,6 @@ def train():
     else:
         (X_enc, X_dec), y = next(iter(testing_dataloader))
 
-    # del train_sequence_data
-    # del testing_sequence_data
-    # gc.collect()
-
-    # print(f"Loaded Sequenced Numpy Data with length, train: {len(train_sequence_data)}, "
-    #                                                     f"test: {len(testing_sequence_data)}")
-    # for i, f in enumerate(feature_list):
-    #     print(f'Encoder {f} Input Shape: {train_sequence_data[i].shape}')
-    #     print(f'Target {f} Labels Shape: {train_sequence_data[i + len(feature_list)].shape}')
-
-    # for data in train_sequence_data:
-    #     print(np.shape(data))
-    # for data in testing_sequence_data:
-    #     print(np.shape(data))
-    # train_sequence_data = pd.read_pickle('./data/sequence_data/' + args.model + '_seq_data' + '.pkl')
-    #
-    # if args.training_mode == 'train':
-    #     train_sequence_data = sequence_data[sequence_data['date'] <= args.validation_start_date]
-    #     testing_sequence_data = sequence_data[(sequence_data['date'] > args.validation_start_date) & (sequence_data['date'] <
-    #                                                                                         args.testing_start_date)]
-    #
-    # else:
-    #     train_sequence_data = sequence_data[sequence_data['date'] <= args.testing_start_date]
-    #     testing_sequence_data = sequence_data[(sequence_data['date'] > args.testing_start_date) & (sequence_data['date'] <
-    #                                                                                         args.testing_end_date)]
-    # print("Testing data")
-    # print(testing_sequence_data.head())
-    # print(testing_sequence_data.tail())
-    #
-    # print("Train data")
-    # print(train_sequence_data.head())
-    # print(train_sequence_data.tail())
-
-    # for i, f in enumerate(feature_list):
-    #     print(f'Encoder {f} Input Shape: {X_enc[i].shape}')
-    #     if i > 1:
-    #         print(f'Decoder {f} Input Shape: {X_dec[i-2].shape}')
-    # print(f'Target Labels Shape: {y.shape}')
-
     # Load all features to initialize models
     # Encoder Features
     # ['h_in', 'log_h_in', 'h_yearly_corr', 'day_of_year_cos', 'day_of_year_sin', 'year_mod']
@@ -240,7 +223,6 @@ def train():
         enc_n_features = np.shape(x_enc_features_1d[0, 0, :])
         dec_n_features = np.shape(x_dec_features_1d[0, 0, :])
         x_features = None
-
 
     if args.use3d_autoencoder and args.model in ['3d', '3D']:
         model = EncoderDecoderWrapper3d(args, None, None, feature_list, x_features)
@@ -306,32 +288,46 @@ def train():
         trainer.train(n_epochs, train_dataloader, testing_dataloader, resume_only_model=True, resume=True)
 
     print("Loading Prediction and Plot")
-    trainer.load_checkpoint(only_model=True)
+    trainer._load_checkpoint(only_model=True)
 
-    test_predictions, target_values, target_dates = trainer.predict(testing_dataloader, n_samples=args.n_samples, plot_phase=True)
-    # prediction shape (batch, n_sample, seq_len, xdim, ydim)
-    # target shape (batch, seq_len, xdim, ydim)
-    test_predictions = np.mean(test_predictions, axis=1)
+    test_predictions, target_values = trainer.predict(testing_dataloader, n_samples=args.n_samples, plot_phase=True)
+    test_predictions_mean = np.mean(test_predictions, axis=1)
+    test_predictions_std = np.std(test_predictions, axis=1)
 
-    # test_predictions = test_predictions.reshape(test_predictions.shape[0], test_predictions.shape[1], -1)
-    # test_predictions = test_predictions.reshape(test_predictions.shape[0], -1)
-    # final_arr_to_csv = [target_dates, test_predictions, target_values]
+    # seq_len = test_predictions.shape[1]
+    # batch_idx = np.random.randint(low=0, high=test_predictions.shape[0], size=1)[0]
+    # print(f'{seq_len}, {test_predictions.shape[0]},{batch_idx}')
+    # print(f'{test_predictions.shape}, {test_predictions[0].shape}, {test_predictions[0][0].shape}')
+    # print(f'{target_values.shape}, {target_values[0].shape}, {target_values[0][0].shape}')
+    # save_target = []
+    # for i in range(seq_len):
+    #     # Take mean when using bayesian inference
+    #     # print(np.shape(test_predictions[batch_idx]))
+    #     # z_pred_mean = np.mean(test_predictions[batch_idx], axis=0)
+    #     # z_pred_std = np.std(test_predictions[batch_idx], axis=0)
+    #     # print(np.shape(z_pred))
+    #     # print(z_pred.shape)
+    #     plot_surface(test_predictions_mean[batch_idx][i], title=f"Predict Mean: t{i}")
+    #     # plot_surface(z_pred_std[i], title=f"Predict Std: t{i}")
+    #     plot_surface(target_values[batch_idx][i], title=f'{batch_idx}: Target: t{i}')
+    #     # save_target.append(target_values[batch_idx][i])
 
-    if args.show_plots:
-        seq_len = test_predictions.shape[1]
-        batch_idx = np.random.randint(low=0, high=test_predictions.shape[0], size=1)[0]
-        # print(f'{seq_len}, {test_predictions.shape[0]},{batch_idx}')
-        # print(f'{test_predictions.shape}, {test_predictions[0].shape}, {test_predictions[0][0].shape}')
-        # print(f'{target_values.shape}, {target_values[0].shape}, {target_values[0][0].shape}')
-        for i in range(seq_len):
-            # Take mean when using bayesian inference
-            # print(z_pred.shape)
-            plot_surface(test_predictions[batch_idx][i], title=f"Predict Time {i}")
-            plot_surface(target_values[batch_idx][i], title=f'{batch_idx}: Target Time {i}')
+    # with open('./data/sequence_data/numpy/' + args.model + '_y_label_seq_data_' + str(args.in_seq_len) + '_' +
+    #           str(args.out_seq_len) + '.pkl', 'wb+') as fp:
+    #     pickle.dump(np.stack(save_target), fp)
+    #
+    # label_3d = pickle.load(open('./data/sequence_data/numpy/' + args.model + '_y_label_seq_data_' + str(args.in_seq_len) + '_' +
+    #           str(args.out_seq_len) + '.pkl', 'rb+'))
+    #
+    # scipy.io.savemat('./data/sequence_data/numpy/' + args.model + '_y_label_seq_data_' + str(args.in_seq_len) + '_' +
+    #           str(args.out_seq_len) + '.mat', mdict={'Target100x100': label_3d})
+    test_hf = h5py.File('./data/sequence_data/numpy/' + args.model + '_test_seq_data_'
+                                       + str(args.in_seq_len) + '_' + str(args.out_seq_len) + '.h5', 'r')
+    target_dates = test_hf.get('testdate')
+    target_dates = np.asarray(target_dates).reshape(-1, 1)
 
-    np_to_csv(test_predictions, target_values, target_dates, args)
-    # test_np.close()
+    np_to_csv(test_predictions_mean, test_predictions_std, target_values, target_dates, args)
+    test_hf.close()
 
 if __name__ == '__main__':
     train()
-    sys.exit()

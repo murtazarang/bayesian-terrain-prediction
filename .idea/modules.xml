@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/bayesianmultistep.iml" filepath="$PROJECT_DIR$/.idea/bayesianmultistep.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/bayesian-terrain-prediction.iml" filepath="$PROJECT_DIR$/.idea/bayesian-terrain-prediction.iml" />
     </modules>
   </component>
 </project>

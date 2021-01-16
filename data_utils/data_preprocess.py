@@ -108,6 +108,7 @@ def load_data(args):
                 scaled_data_train[h + '_yearly_corr'] = get_yearly_autocorr(scale_data_train[h])
                 scaled_data_test[h + '_yearly_corr'] = get_yearly_autocorr(scale_data_test[h])
 
+
     # yearly_autocorr_height_list = [h + '_yearly_corr' for h in height_list]
     # selected_columns = ['date', 'day_of_year', 'year', 'day_of_year_sin', 'day_of_year_cos', 'year_mod'] + height_list \
     #                     + log_height_list + yearly_autocorr_height_list

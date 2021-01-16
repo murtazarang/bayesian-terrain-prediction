@@ -4,14 +4,10 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser("TimeSeries")
 
-    parser.add_argument("--exp_name", type=str, default='now_cast_5_1')
+    parser.add_argument("--exp_name", type=str, default='skip_in_convlst_10_10')
+    parser.add_argument("--predict_run", type=str, default='1')
     parser.add_argument("--lr_search", default=False, action='store_true')
     parser.add_argument("--train_network", default=False, action='store_true')
-
-    # Test Time
-    parser.add_argument("--predict_run", default='1', type=str)
-    parser.add_argument("--predict", default=True, action='store_true')
-    parser.add_argument("--show_plots", default=False, action='store_true')
 
     parser.add_argument("--device", type=str, default="cuda", choices=['cuda', 'cpu'])
 
@@ -21,12 +17,12 @@ def parse_args():
     parser.add_argument("--xdim", type=int, default=100)
     parser.add_argument("--ydim", type=int, default=100)
 
-    parser.add_argument("--in_seq_len", type=int, default=5)
-    parser.add_argument("--out_seq_len", type=int, default=1)
+    parser.add_argument("--in_seq_len", type=int, default=10)
+    parser.add_argument("--out_seq_len", type=int, default=10)
 
     parser.add_argument("--epoch", type=int, default=400)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1.18E-05)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--lr", type=float, default=1.32E-05)
     parser.add_argument("--lr_decay", type=float, default=1.0E-06)
 
     parser.add_argument("--train_split", type=int, default=8258)
@@ -58,8 +54,8 @@ def parse_args():
     # Data pre-processing methods
     parser.add_argument("--no_cylical_dates", default=False, action='store_true')
     parser.add_argument("--height_correction", type=str, default='log', choices=['log', 'autocorrelation'])
-    parser.add_argument("--training_mode", type=str, default="train_init", choices=["train_init", "train_final", "test"])
-    parser.add_argument("--testing_start_date", type=str, default='2007-12-22')
+    parser.add_argument("--training_mode", type=str, default="train_final", choices=['test', 'train_init', 'train_final'])
+    parser.add_argument("--testing_start_date", type=str, default='2008-01-01')
     parser.add_argument("--testing_end_date", type=str, default='2009-12-31')
     parser.add_argument("--validation_start_date", type=str, default='2007-01-01')
 
@@ -74,11 +70,13 @@ def parse_args():
     parser.add_argument("--use_log_h", default=False, action='store_true')
     parser.add_argument("--use_add_features", default=False, action='store_true')
     parser.add_argument("--use_yr_corr", default=False, action='store_true')
-    parser.add_argument("--use_skip_conn", default=False, action='store_true')
+    parser.add_argument("--use_skip_conn", default=True, action='store_true')
     parser.add_argument("--twolayer_convlstm", default=False, action='store_true')
     parser.add_argument("--skip_layers", type=list, default=[0, 2])
 
     # Model type
     parser.add_argument("--use3d_autoencoder", default=True, action='store_true')
+
+    # Test Time
 
     return parser.parse_args()
