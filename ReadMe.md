@@ -1,4 +1,4 @@
-# Agriculture Height Prediction with ConvLSTM
+# Agriculture Height Prediction with Approximate Bayesian ConvLSTM
 
 
 ## Dependencies
